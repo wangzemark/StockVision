@@ -5,3 +5,9 @@ stock_list_cache.json
 .claude/plans/
 .claude/skills/
 .claude/worktrees/
+
+# 无关文件
+=0.2.40
+sac2txt.tar.gz
+奏疏
+othercode/
