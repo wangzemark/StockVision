@@ -160,7 +160,7 @@ body {
       <div class="chart-box-sm" id="chartRsi"></div>
     </div>
     <div class="chart-panel">
-      <h3>成交量</h3>
+      <h3>成交量（手）</h3>
       <div class="chart-box-sm" id="chartVol"></div>
     </div>
   </div>
@@ -254,7 +254,7 @@ function renderFundamentals(f) {
     { label: '每股收益 (EPS)', value: f.eps, suffix: ' 元', sub: '基本每股收益' },
     { label: '总市值', value: f.market_cap, suffix: '', sub: '亿元', fmt: 'mcap' },
     { label: '换手率', value: f.turnover_rate, suffix: '%', sub: '市场活跃度' },
-    { label: '成交额', value: f.amount, suffix: '', sub: '万元', fmt: 'amount' },
+    { label: '成交额', value: f.amount, suffix: '', sub: '元', fmt: 'amount' },
     { label: '涨跌幅', value: f.change_pct, suffix: '%', sub: '今日表现', cls: true },
   ];
   let html = '';
@@ -446,7 +446,7 @@ function renderVolume(chart) {
   const vols = chart.volume ? chart.volume.slice(-120) : [];
 
   c.setOption({
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: v => v != null ? v.toLocaleString() + ' 手' : '-' },
     grid: { left: 60, right: 20, top: 10, bottom: 30 },
     xAxis: {
       type: 'category', data: dates,
@@ -455,11 +455,11 @@ function renderVolume(chart) {
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v >= 1e8 ? (v / 1e8).toFixed(1) + '亿' : (v / 1e4).toFixed(0) + '万' },
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v >= 1e8 ? (v / 1e8).toFixed(1) + '亿手' : (v / 1e4).toFixed(0) + '万手' },
       splitLine: { lineStyle: { color: '#1e2d3a' } },
     },
     series: [{
-      type: 'bar', data: vols,
+      name: '成交量', type: 'bar', data: vols,
       itemStyle: { color: '#42a5f5' },
       barWidth: '60%',
     }],
