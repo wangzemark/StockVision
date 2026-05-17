@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美股分析仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f1923;
+  color: #e0e6ed;
+  min-height: 100vh;
+}
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  background: #1a2732;
+  border-bottom: 1px solid #2a3a4a;
+}
+.header-left h1 { font-size: 20px; color: #fff; }
+.header-left .subtitle { font-size: 12px; color: #8899aa; margin-top: 2px; }
+.nav-links { display: flex; gap: 12px; }
+.nav-links a {
+  color: #7a8a9a; text-decoration: none; font-size: 13px;
+  padding: 4px 10px; border-radius: 4px; transition: all 0.2s;
+}
+.nav-links a:hover { color: #fff; background: #2a3a4a; }
+.nav-links a.active { color: #42a5f5; background: #1e2d3a; }
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  background: #0f1923; border: 1px solid #2a3a4a; border-radius: 8px;
+  padding: 6px 12px;
+}
+.search-box input {
+  background: none; border: none; color: #fff; font-size: 16px;
+  width: 140px; outline: none; text-align: center;
+  font-family: 'Courier New', monospace; letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.search-box input::placeholder { color: #4a5a6a; letter-spacing: 0; text-transform: none; }
+.search-box button {
+  background: #1e90ff; color: #fff; border: none;
+  padding: 8px 18px; border-radius: 6px; cursor: pointer;
+  font-size: 14px; font-weight: 600;
+}
+.search-box button:hover { background: #1a7de0; }
+.stock-info {
+  text-align: right;
+}
+.stock-info .name { font-size: 18px; font-weight: 700; color: #fff; }
+.stock-info .code { font-size: 12px; color: #8899aa; }
+.stock-info .price { font-size: 28px; font-weight: 800; margin: 4px 0; }
+.stock-info .change { font-size: 15px; font-weight: 600; }
+.stock-info .sector { font-size: 11px; color: #5a6a7a; margin-top: 2px; }
+.up { color: #ef5350; }
+.down { color: #26a69a; }
+.dashboard { padding: 16px 24px; display: grid; gap: 14px; }
+.row-top {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.row-mid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+}
+.row-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+.fund-card {
+  background: #1a2732; border-radius: 10px; padding: 16px;
+  border: 1px solid #2a3a4a;
+}
+.fund-card .label { font-size: 12px; color: #7a8a9a; margin-bottom: 6px; }
+.fund-card .value { font-size: 22px; font-weight: 700; color: #fff; }
+.fund-card .sub { font-size: 11px; color: #5a6a7a; margin-top: 4px; }
+.chart-panel {
+  background: #1a2732; border-radius: 10px; padding: 12px;
+  border: 1px solid #2a3a4a;
+}
+.chart-panel h3 { font-size: 14px; color: #c0ccda; margin-bottom: 8px; }
+.chart-box { width: 100%; height: 340px; }
+.chart-box-sm { width: 100%; height: 280px; }
+.tech-panel {
+  background: #1a2732; border-radius: 10px; padding: 16px;
+  border: 1px solid #2a3a4a;
+}
+.tech-panel h3 { font-size: 14px; color: #c0ccda; margin-bottom: 12px; }
+.tech-row {
+  display: flex; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid #1e2d3a;
+  font-size: 13px;
+}
+.tech-row .tlabel { color: #7a8a9a; }
+.tech-row .tval { font-weight: 600; color: #e0e6ed; font-family: 'Courier New', monospace; }
+.tech-row .tval.trend { color: #ffa726; }
+.loading {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: #8899aa; font-size: 16px;
+}
+.error {
+  color: #ef5350; text-align: center; padding: 40px; font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>美股分析仪表盘</h1>
+    <div class="subtitle">基本面 + 技术面 · Yahoo Finance</div>
+  </div>
+  <div class="nav-links">
+    <a href="/">A股</a>
+    <a href="/us" class="active">美股</a>
+  </div>
+  <div class="search-box">
+    <input type="text" id="stockSymbol" placeholder="输入代码" value="AAPL" maxlength="10">
+    <button onclick="loadStock()">查询</button>
+  </div>
+  <div class="stock-info" id="stockInfo" style="display:none">
+    <div class="name" id="sName">--</div>
+    <div class="code" id="sCode">--</div>
+    <div class="price" id="sPrice">--</div>
+    <div class="change" id="sChange">--</div>
+    <div class="sector" id="sSector"></div>
+  </div>
+</div>
+
+<div class="dashboard" id="dashboard" style="display:none">
+
+  <!-- 基本面卡片 -->
+  <div class="row-top" id="fundCards"></div>
+
+  <!-- 第二行基本面卡片 -->
+  <div class="row-top" id="fundCards2" style="margin-top:-4px"></div>
+
+  <!-- K线图 + 技术指标面板 -->
+  <div class="row-mid">
+    <div class="chart-panel">
+      <h3>价格走势（日线·复权）</h3>
+      <div class="chart-box" id="chartKline"></div>
+    </div>
+    <div class="tech-panel" id="techPanel"></div>
+  </div>
+
+  <!-- MACD / RSI / 成交量 -->
+  <div class="row-bottom">
+    <div class="chart-panel">
+      <h3>MACD</h3>
+      <div class="chart-box-sm" id="chartMacd"></div>
+    </div>
+    <div class="chart-panel">
+      <h3>RSI (14)</h3>
+      <div class="chart-box-sm" id="chartRsi"></div>
+    </div>
+    <div class="chart-panel">
+      <h3>成交量</h3>
+      <div class="chart-box-sm" id="chartVol"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="loading" id="loading">加载中...</div>
+
+<script>
+const eCharts = {};
+
+function initChart(id) {
+  if (eCharts[id]) eCharts[id].dispose();
+  const dom = document.getElementById(id);
+  if (!dom) return null;
+  const chart = echarts.init(dom, null, { renderer: 'canvas' });
+  eCharts[id] = chart;
+  return chart;
+}
+
+function resizeAll() {
+  Object.values(eCharts).forEach(c => c.resize());
+}
+window.addEventListener('resize', resizeAll);
+
+async function loadStock() {
+  const symbol = document.getElementById('stockSymbol').value.trim().toUpperCase();
+  if (!symbol) {
+    alert('请输入美股代码');
+    return;
+  }
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('stockInfo').style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/us/stock/${symbol}/all`);
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('loading').innerHTML =
+        `<div class="error">${json.error}</div>`;
+      return;
+    }
+    const d = json.data;
+    renderFundamentals(d.fundamentals);
+    renderFundamentals2(d.fundamentals);
+    renderStockInfo(d.fundamentals);
+    renderTechPanel(d.technical);
+    renderKline(d.chart, d.fundamentals);
+    renderMacd(d.chart);
+    renderRsi(d.technical.rsi);
+    renderVolume(d.chart);
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = '';
+    document.getElementById('stockInfo').style.display = '';
+    resizeAll();
+  } catch (e) {
+    document.getElementById('loading').innerHTML =
+      `<div class="error">请求失败：${e.message}</div>`;
+  }
+}
+
+function renderStockInfo(f) {
+  document.getElementById('sName').textContent = f.name;
+  document.getElementById('sCode').textContent = f.code;
+  document.getElementById('sPrice').textContent = f.price != null ? '$' + f.price.toFixed(2) : '--';
+  const chg = document.getElementById('sChange');
+  if (f.change_pct != null) {
+    const cls = f.change_pct >= 0 ? 'up' : 'down';
+    const sign = f.change_pct >= 0 ? '+' : '';
+    chg.className = `change ${cls}`;
+    chg.textContent = `${sign}${f.change_pct.toFixed(2)}%  ${f.change_amount != null ? (sign + f.change_amount.toFixed(2)) : ''}`;
+  } else {
+    chg.textContent = '';
+  }
+  const sectorEl = document.getElementById('sSector');
+  const parts = [];
+  if (f.sector) parts.push(f.sector);
+  if (f.industry) parts.push(f.industry);
+  sectorEl.textContent = parts.join(' · ');
+}
+
+function fmtMcap(val) {
+  if (val == null) return '--';
+  if (val >= 1e12) return (val / 1e12).toFixed(2) + ' T';
+  if (val >= 1e9) return (val / 1e9).toFixed(2) + ' B';
+  if (val >= 1e6) return (val / 1e6).toFixed(2) + ' M';
+  return val.toFixed(0);
+}
+
+function fmtVol(val) {
+  if (val == null) return '--';
+  if (val >= 1e9) return (val / 1e9).toFixed(2) + ' B';
+  if (val >= 1e6) return (val / 1e6).toFixed(2) + ' M';
+  if (val >= 1e3) return (val / 1e3).toFixed(0) + ' K';
+  return val.toFixed(0);
+}
+
+function renderFundamentals(f) {
+  const cards = [
+    { label: '市盈率 (PE)', value: f.pe, suffix: '', sub: 'Trailing P/E' },
+    { label: '远期市盈率', value: f.forward_pe, suffix: '', sub: 'Forward P/E' },
+    { label: '市净率 (PB)', value: f.pb, suffix: '', sub: 'Price to Book' },
+    { label: '净资产收益率 (ROE)', value: f.roe, suffix: '%', sub: 'Return on Equity' },
+    { label: '每股收益 (EPS)', value: f.eps, suffix: ' USD', sub: 'Trailing EPS' },
+    { label: '总市值', value: f.market_cap, suffix: '', sub: 'Market Cap', fmt: 'mcap' },
+    { label: '成交量', value: f.volume, suffix: '', sub: 'Volume', fmt: 'vol' },
+    { label: '涨跌幅', value: f.change_pct, suffix: '%', sub: 'Today', cls: true },
+  ];
+  let html = '';
+  cards.forEach(c => {
+    let v;
+    if (c.fmt === 'mcap' && c.value != null) v = fmtMcap(c.value);
+    else if (c.fmt === 'vol' && c.value != null) v = fmtVol(c.value);
+    else if (c.value != null) v = c.value.toFixed(2);
+    else v = '--';
+    let cls = '';
+    if (c.cls && c.value != null) cls = c.value >= 0 ? 'up' : 'down';
+    html += `<div class="fund-card">
+      <div class="label">${c.label}</div>
+      <div class="value ${cls}">${v}${c.suffix}</div>
+      <div class="sub">${c.sub}</div>
+    </div>`;
+  });
+  document.getElementById('fundCards').innerHTML = html;
+}
+
+function renderFundamentals2(f) {
+  const cards = [
+    { label: 'Beta', value: f.beta, suffix: '', sub: '波动性指标' },
+    { label: '股息率', value: f.dividend_yield, suffix: '%', sub: 'Dividend Yield' },
+    { label: '52周最高', value: f['52w_high'], suffix: ' USD', sub: '52-Week High' },
+    { label: '52周最低', value: f['52w_low'], suffix: ' USD', sub: '52-Week Low' },
+    { label: '今开', value: f.open, suffix: ' USD', sub: 'Open' },
+    { label: '昨收', value: f.pre_close, suffix: ' USD', sub: 'Previous Close' },
+    { label: '最高', value: f.high, suffix: ' USD', sub: 'Day High' },
+    { label: '最低', value: f.low, suffix: ' USD', sub: 'Day Low' },
+  ];
+  let html = '';
+  cards.forEach(c => {
+    let v = c.value != null ? c.value.toFixed(2) : '--';
+    html += `<div class="fund-card">
+      <div class="label">${c.label}</div>
+      <div class="value">${v}${c.suffix}</div>
+      <div class="sub">${c.sub}</div>
+    </div>`;
+  });
+  document.getElementById('fundCards2').innerHTML = html;
+}
+
+function renderTechPanel(t) {
+  const rows = [
+    ['MA5', t.ma?.ma5, ''],
+    ['MA20', t.ma?.ma20, ''],
+    ['MA60', t.ma?.ma60, ''],
+    ['MACD DIF', t.macd?.dif, ''],
+    ['MACD DEA', t.macd?.dea, ''],
+    ['MACD 柱', t.macd?.hist, ''],
+    ['RSI (14)', t.rsi, ''],
+    ['布林上轨', t.boll?.upper, ''],
+    ['布林中轨', t.boll?.middle, ''],
+    ['布林下轨', t.boll?.lower, ''],
+    ['年化波动率', t.volatility != null ? (t.volatility * 100).toFixed(2) + '%' : '--', ''],
+    ['最大回撤', t.max_drawdown != null ? (t.max_drawdown * 100).toFixed(2) + '%' : '--', ''],
+    ['夏普比率', t.sharpe, ''],
+    ['趋势判断', t.trend, 'trend'],
+  ];
+  let html = '<h3>技术指标总览</h3>';
+  rows.forEach(([label, val, cls]) => {
+    let dv = val != null ? val : '--';
+    html += `<div class="tech-row">
+      <span class="tlabel">${label}</span>
+      <span class="tval ${cls}">${dv}</span>
+    </div>`;
+  });
+  document.getElementById('techPanel').innerHTML = html;
+}
+
+function renderKline(chart, f) {
+  const c = initChart('chartKline');
+  if (!c) return;
+  const dates = chart.dates;
+  const ohlc = chart.close.map(v => v);
+
+  c.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 60, right: 20, top: 20, bottom: 30 },
+    xAxis: {
+      type: 'category', data: dates,
+      axisLabel: { color: '#7a8a9a', fontSize: 10,
+        formatter: v => v.slice(5) },
+      axisLine: { lineStyle: { color: '#2a3a4a' } },
+    },
+    yAxis: {
+      type: 'value', scale: true,
+      axisLabel: { color: '#7a8a9a', fontSize: 10 },
+      splitLine: { lineStyle: { color: '#1e2d3a' } },
+    },
+    series: [
+      {
+        name: '收盘价', type: 'line', data: ohlc,
+        lineStyle: { color: '#42a5f5', width: 1.5 },
+        showSymbol: false,
+        markLine: {
+          silent: true, symbol: 'none',
+          data: [
+            { yAxis: chart.ma5, label: { formatter: `MA5: ${chart.ma5}`, color: '#ffa726', fontSize: 10 }, lineStyle: { color: '#ffa726', type: 'dashed' } },
+            { yAxis: chart.ma20, label: { formatter: `MA20: ${chart.ma20}`, color: '#ab47bc', fontSize: 10 }, lineStyle: { color: '#ab47bc', type: 'dashed' } },
+            { yAxis: chart.ma60, label: { formatter: `MA60: ${chart.ma60}`, color: '#66bb6a', fontSize: 10 }, lineStyle: { color: '#66bb6a', type: 'dashed' } },
+          ].filter(m => m.yAxis != null),
+        },
+      },
+    ],
+  });
+}
+
+function renderMacd(chart) {
+  const c = initChart('chartMacd');
+  if (!c) return;
+  const dates = chart.dates ? chart.dates.slice(-120) : [];
+  const dif = chart.macd_dif || [];
+  const dea = chart.macd_dea || [];
+  const hist = chart.macd_hist || [];
+
+  c.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 60, right: 20, top: 10, bottom: 30 },
+    xAxis: {
+      type: 'category', data: dates,
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v.slice(5) },
+      axisLine: { lineStyle: { color: '#2a3a4a' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#7a8a9a', fontSize: 10 },
+      splitLine: { lineStyle: { color: '#1e2d3a' } },
+    },
+    series: [
+      { name: 'DIF', type: 'line', data: dif, lineStyle: { color: '#42a5f5', width: 1 }, showSymbol: false },
+      { name: 'DEA', type: 'line', data: dea, lineStyle: { color: '#ffa726', width: 1 }, showSymbol: false },
+      {
+        name: '柱', type: 'bar', data: hist.map((v, i) => [i, v]),
+        itemStyle: { color: params => params.value[1] >= 0 ? '#ef5350' : '#26a69a' },
+        barWidth: '60%',
+      },
+    ],
+  });
+}
+
+function renderRsi(rsiVal) {
+  const c = initChart('chartRsi');
+  if (!c) return;
+  c.setOption({
+    series: [{
+      type: 'gauge',
+      startAngle: 210, endAngle: -30,
+      center: ['50%', '60%'], radius: '85%',
+      min: 0, max: 100,
+      splitNumber: 10,
+      axisLine: {
+        show: true,
+        lineStyle: {
+          width: 18,
+          color: [
+            [0.3, '#26a69a'], [0.7, '#ffa726'], [1, '#ef5350']
+          ],
+        },
+      },
+      pointer: { length: '60%', width: 6, itemStyle: { color: '#e0e6ed' } },
+      axisTick: { distance: -20, length: 6, lineStyle: { color: '#7a8a9a', width: 1 } },
+      splitLine: { distance: -24, length: 14, lineStyle: { color: '#7a8a9a', width: 2 } },
+      axisLabel: { color: '#7a8a9a', fontSize: 10, distance: 30 },
+      detail: {
+        valueAnimation: true,
+        formatter: '{value}',
+        color: '#e0e6ed',
+        fontSize: 28, fontWeight: 'bold',
+        offsetCenter: [0, '70%'],
+      },
+      data: [{ value: rsiVal != null ? rsiVal : 50 }],
+    }],
+  });
+}
+
+function renderVolume(chart) {
+  const c = initChart('chartVol');
+  if (!c) return;
+  const dates = chart.dates ? chart.dates.slice(-120) : [];
+  const vols = chart.volume ? chart.volume.slice(-120) : [];
+
+  c.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 60, right: 20, top: 10, bottom: 30 },
+    xAxis: {
+      type: 'category', data: dates,
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v.slice(5) },
+      axisLine: { lineStyle: { color: '#2a3a4a' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : (v / 1e6).toFixed(1) + 'M' },
+      splitLine: { lineStyle: { color: '#1e2d3a' } },
+    },
+    series: [{
+      type: 'bar', data: vols,
+      itemStyle: { color: '#42a5f5' },
+      barWidth: '60%',
+    }],
+  });
+}
+
+// 页面加载时自动查询默认股票
+window.addEventListener('DOMContentLoaded', () => loadStock());
+
+// 回车键触发查询
+document.getElementById('stockSymbol').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadStock();
+});
+</script>
+</body>
+</html>
