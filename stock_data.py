@@ -43,17 +43,18 @@ def fetch_realtime(code: str) -> dict:
     except Exception as e:
         raise ValueError(f"获取 {code} 实时行情失败: {e}")
 
-    # 腾讯实时行情字段索引（~ 分隔）
+    # 腾讯实时行情字段索引（~ 分隔，v2 格式共 88 字段）
     # [1]名称 [2]代码 [3]最新价 [4]昨收 [5]今开 [6]成交量(手)
-    # [30]涨跌额 [31]涨跌幅% [32]最高 [33]最低
-    # [36]成交额(万) [37]换手率% [38]市盈率 [43]总市值(亿) [44]流通市值(亿) [45]市净率
+    # [31]涨跌额 [32]涨跌幅% [33]最高 [34]最低
+    # [38]换手率% [39]市盈率 [44]总市值(亿) [45]流通市值(亿) [46]市净率
+    # [57]成交额(万)
 
     def field(i):
         return parts[i] if i < len(parts) and parts[i] else None
 
     # 2. 财务指标（PE/PB/EPS/ROE 从腾讯概况接口获取更准确）
-    pe = _safe_float(field(38))
-    pb = _safe_float(field(45))
+    pe = _safe_float(field(39))
+    pb = _safe_float(field(46))
     try:
         fin_url = f"https://ifzq.gtimg.cn/appstock/app/stockinfo/jiankuang?code={symbol}"
         fin_resp = requests.get(fin_url, timeout=10)
@@ -71,28 +72,28 @@ def fetch_realtime(code: str) -> dict:
         eps = None
         roe = None
 
-    market_cap = _safe_float(field(43))  # 亿
-    circ_market_cap = _safe_float(field(44))  # 亿
+    market_cap = _safe_float(field(44))  # 亿
+    circ_market_cap = _safe_float(field(45))  # 亿
 
     return {
         "code": code,
         "name": str(field(1) or ""),
         "price": _safe_float(field(3)),
-        "change_pct": _safe_float(field(31)),
-        "change_amount": _safe_float(field(30)),
+        "change_pct": _safe_float(field(32)),
+        "change_amount": _safe_float(field(31)),
         "volume": _safe_float(field(6)),
-        "amount": _safe_float(field(36)),
-        "high": _safe_float(field(32)),
-        "low": _safe_float(field(33)),
+        "amount": _safe_float(field(57)),  # 万元
+        "high": _safe_float(field(33)),
+        "low": _safe_float(field(34)),
         "open": _safe_float(field(5)),
         "pre_close": _safe_float(field(4)),
-        "turnover_rate": _safe_float(field(37)),
+        "turnover_rate": _safe_float(field(38)),
         "pe": pe,
         "pb": pb,
         "eps": eps,
         "roe": roe,
-        "market_cap": round(market_cap * 1e8, 2) if market_cap is not None else None,
-        "circ_market_cap": round(circ_market_cap * 1e8, 2) if circ_market_cap is not None else None,
+        "market_cap": market_cap,  # 亿
+        "circ_market_cap": circ_market_cap,  # 亿
     }
 
 

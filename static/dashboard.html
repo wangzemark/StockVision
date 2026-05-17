@@ -254,14 +254,18 @@ function renderFundamentals(f) {
     { label: '每股收益 (EPS)', value: f.eps, suffix: ' 元', sub: '基本每股收益' },
     { label: '总市值', value: f.market_cap, suffix: '', sub: '亿元', fmt: 'mcap' },
     { label: '换手率', value: f.turnover_rate, suffix: '%', sub: '市场活跃度' },
-    { label: '成交额', value: f.amount, suffix: '', sub: '元', fmt: 'amount' },
+    { label: '成交额', value: f.amount, suffix: '', sub: '万元', fmt: 'amount' },
     { label: '涨跌幅', value: f.change_pct, suffix: '%', sub: '今日表现', cls: true },
   ];
   let html = '';
   cards.forEach(c => {
     let v;
-    if (c.fmt === 'mcap' && c.value != null) v = (c.value / 1e8).toFixed(0) + ' 亿';
-    else if (c.fmt === 'amount' && c.value != null) v = (c.value / 1e8).toFixed(2) + ' 亿';
+    if (c.fmt === 'mcap' && c.value != null) v = c.value.toFixed(0) + ' 亿';
+    else if (c.fmt === 'amount' && c.value != null) {
+      // 万元 → 亿（>=1亿时），否则保持万元
+      if (c.value >= 10000) v = (c.value / 1e4).toFixed(2) + ' 亿';
+      else v = c.value.toFixed(0) + ' 万';
+    }
     else if (c.value != null) v = c.value.toFixed(2);
     else v = '--';
     let cls = '';
@@ -308,25 +312,44 @@ function renderKline(chart, f) {
   if (!c) return;
   const upColor = '#ef5350'; const downColor = '#26a69a';
 
-  // 构造 K 线数据: [open, close, low, high]
-  // 我们只有 daily close/open/high/low，用它们构建
   const dates = chart.dates;
+  // ECharts candlestick: [open, close, low, high]
   const ohlc = [];
   const vols = [];
   for (let i = 0; i < dates.length; i++) {
-    // 简化：用收盘价线代替 K 线，因为我们传的是 close 序列
-    // 实际没有传每根 K 线的 OHLC，这里用收盘价作为折线展示
-    ohlc.push(chart.close[i]);
+    ohlc.push([
+      chart.open[i],
+      chart.close[i],
+      chart.low[i],
+      chart.high[i]
+    ]);
+    vols.push(chart.volume[i]);
   }
 
+  // 构建 MA 线条
+  const closeData = chart.close;
+  function calcMA(data, period) {
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) { result.push(null); continue; }
+      let sum = 0;
+      for (let j = 0; j < period; j++) sum += data[i - j];
+      result.push(+(sum / period).toFixed(2));
+    }
+    return result;
+  }
+  const ma5 = calcMA(closeData, 5);
+  const ma20 = calcMA(closeData, 20);
+  const ma60 = calcMA(closeData, 60);
+
   c.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 60, right: 20, top: 20, bottom: 30 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    grid: { left: 70, right: 20, top: 20, bottom: 40 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { color: '#7a8a9a', fontSize: 10,
-        formatter: v => v.slice(5) },
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v.slice(5) },
       axisLine: { lineStyle: { color: '#2a3a4a' } },
+      axisTick: { lineStyle: { color: '#2a3a4a' } },
     },
     yAxis: {
       type: 'value', scale: true,
@@ -335,18 +358,15 @@ function renderKline(chart, f) {
     },
     series: [
       {
-        name: '收盘价', type: 'line', data: ohlc,
-        lineStyle: { color: '#42a5f5', width: 1.5 },
-        showSymbol: false,
-        markLine: {
-          silent: true, symbol: 'none',
-          data: [
-            { yAxis: chart.ma5, label: { formatter: `MA5: ${chart.ma5}`, color: '#ffa726', fontSize: 10 }, lineStyle: { color: '#ffa726', type: 'dashed' } },
-            { yAxis: chart.ma20, label: { formatter: `MA20: ${chart.ma20}`, color: '#ab47bc', fontSize: 10 }, lineStyle: { color: '#ab47bc', type: 'dashed' } },
-            { yAxis: chart.ma60, label: { formatter: `MA60: ${chart.ma60}`, color: '#66bb6a', fontSize: 10 }, lineStyle: { color: '#66bb6a', type: 'dashed' } },
-          ].filter(m => m.yAxis != null),
+        name: 'K线', type: 'candlestick', data: ohlc,
+        itemStyle: {
+          color: upColor, color0: downColor,
+          borderColor: upColor, borderColor0: downColor,
         },
       },
+      { name: 'MA5', type: 'line', data: ma5, smooth: true, lineStyle: { color: '#ffa726', width: 1 }, showSymbol: false },
+      { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { color: '#ab47bc', width: 1 }, showSymbol: false },
+      { name: 'MA60', type: 'line', data: ma60, smooth: true, lineStyle: { color: '#66bb6a', width: 1 }, showSymbol: false },
     ],
   });
 }

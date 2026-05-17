@@ -47,7 +47,10 @@ def api_technical(code):
             # chart data
             "chart": {
                 "dates": dates[-180:],
+                "open": [round(float(x), 2) for x in df["open"].tail(180)],
                 "close": [round(float(x), 2) for x in df["close"].tail(180)],
+                "high": [round(float(x), 2) for x in df["high"].tail(180)],
+                "low": [round(float(x), 2) for x in df["low"].tail(180)],
                 "volume": [round(float(x), 0) for x in df["volume"].tail(180)],
                 "ma5": tech["ma"].get("ma5"),
                 "ma20": tech["ma"].get("ma20"),
@@ -88,7 +91,10 @@ def api_all(code):
                 },
                 "chart": {
                     "dates": dates[-180:],
+                    "open": [round(float(x), 2) for x in df["open"].tail(180)],
                     "close": [round(float(x), 2) for x in df["close"].tail(180)],
+                    "high": [round(float(x), 2) for x in df["high"].tail(180)],
+                    "low": [round(float(x), 2) for x in df["low"].tail(180)],
                     "volume": [round(float(x), 0) for x in df["volume"].tail(180)],
                     "macd_dif": tech["macd_series"]["dif"],
                     "macd_dea": tech["macd_series"]["dea"],
