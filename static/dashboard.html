@@ -54,6 +54,13 @@ body {
   font-size: 14px; font-weight: 600;
 }
 .search-box button:hover { background: #1a7de0; }
+.nav-links { display: flex; gap: 12px; }
+.nav-links a {
+  color: #7a8a9a; text-decoration: none; font-size: 13px;
+  padding: 4px 10px; border-radius: 4px; transition: all 0.2s;
+}
+.nav-links a:hover { color: #fff; background: #2a3a4a; }
+.nav-links a.active { color: #42a5f5; background: #1e2d3a; }
 .stock-info {
   text-align: right;
 }
@@ -121,6 +128,10 @@ body {
   <div class="header-left">
     <h1>A股分析仪表盘</h1>
     <div class="subtitle">基本面 + 技术面</div>
+  </div>
+  <div class="nav-links">
+    <a href="/" class="active">A股</a>
+    <a href="/us">美股</a>
   </div>
   <div class="search-box" style="position: relative;">
     <input type="text" id="stockCode" placeholder="输入名称或代码" value="600519" maxlength="20" autocomplete="off">

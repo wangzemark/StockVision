@@ -45,6 +45,23 @@ body {
   padding: 8px 18px; border-radius: 6px; cursor: pointer;
   font-size: 14px; font-weight: 600;
 }
+.search-box input::placeholder { color: #4a5a6a; letter-spacing: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.suggestions {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: #1a2732; border: 1px solid #2a3a4a; border-top: none;
+  border-radius: 0 0 8px 8px; max-height: 320px; overflow-y: auto;
+  z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.suggestion-item {
+  padding: 10px 14px; cursor: pointer; display: flex;
+  justify-content: space-between; align-items: center;
+  border-bottom: 1px solid #1e2d3a; transition: background 0.15s;
+}
+.suggestion-item:last-child { border-bottom: none; border-radius: 0 0 8px 8px; }
+.suggestion-item:hover, .suggestion-item.active { background: #1e2d3a; }
+.suggestion-item .sname { font-size: 14px; color: #e0e6ed; font-weight: 500; }
+.suggestion-item .scode { font-size: 12px; color: #7a8a9a; font-family: 'Courier New', monospace; }
+.suggestion-item .shighlight { color: #1e90ff; }
 .search-box button:hover { background: #1a7de0; }
 .stock-info {
   text-align: right;
@@ -119,8 +136,9 @@ body {
     <a href="/">A股</a>
     <a href="/us" class="active">美股</a>
   </div>
-  <div class="search-box">
-    <input type="text" id="stockSymbol" placeholder="输入代码" value="AAPL" maxlength="10">
+  <div class="search-box" style="position: relative;">
+    <input type="text" id="stockSymbol" placeholder="输入名称或代码" value="AAPL" maxlength="30" autocomplete="off">
+    <div class="suggestions" id="suggestions" style="display:none;"></div>
     <button onclick="loadStock()">查询</button>
   </div>
   <div class="stock-info" id="stockInfo" style="display:none">
@@ -143,7 +161,7 @@ body {
   <!-- K线图 + 技术指标面板 -->
   <div class="row-mid">
     <div class="chart-panel">
-      <h3>价格走势（日线·复权）</h3>
+      <h3>K线图（日线·复权）</h3>
       <div class="chart-box" id="chartKline"></div>
     </div>
     <div class="tech-panel" id="techPanel"></div>
@@ -186,12 +204,33 @@ function resizeAll() {
 }
 window.addEventListener('resize', resizeAll);
 
-async function loadStock() {
-  const symbol = document.getElementById('stockSymbol').value.trim().toUpperCase();
+async function loadStock(codeOverride) {
+  let symbol = codeOverride || document.getElementById('stockSymbol').value.trim().toUpperCase();
   if (!symbol) {
-    alert('请输入美股代码');
+    alert('请输入美股代码或名称');
     return;
   }
+
+  // 如果输入不像是纯代码（含有空格或非字母数字字符），尝试名称搜索
+  if (!/^[A-Z0-9.]+$/.test(symbol) || symbol.length < 1) {
+    const results = await searchStock(symbol);
+    if (results.length > 0) {
+      symbol = results[0].code;
+      document.getElementById('stockSymbol').value = symbol;
+    } else {
+      alert('未找到匹配的美股，请检查输入');
+      return;
+    }
+  } else if (symbol.length <= 5 && !codeOverride) {
+    // 短代码可能不是完整代码，先搜索看看
+    const results = await searchStock(symbol);
+    if (results.length > 0 && results[0].score >= 80) {
+      symbol = results[0].code;
+      document.getElementById('stockSymbol').value = symbol;
+    }
+  }
+
+  hideSuggestions();
 
   document.getElementById('loading').style.display = 'block';
   document.getElementById('dashboard').style.display = 'none';
@@ -343,17 +382,42 @@ function renderTechPanel(t) {
 function renderKline(chart, f) {
   const c = initChart('chartKline');
   if (!c) return;
+  const upColor = '#ef5350'; const downColor = '#26a69a';
+
   const dates = chart.dates;
-  const ohlc = chart.close.map(v => v);
+  const ohlc = [];
+  for (let i = 0; i < dates.length; i++) {
+    ohlc.push([
+      chart.open[i],
+      chart.close[i],
+      chart.low[i],
+      chart.high[i]
+    ]);
+  }
+
+  const closeData = chart.close;
+  function calcMA(data, period) {
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) { result.push(null); continue; }
+      let sum = 0;
+      for (let j = 0; j < period; j++) sum += data[i - j];
+      result.push(+(sum / period).toFixed(2));
+    }
+    return result;
+  }
+  const ma5 = calcMA(closeData, 5);
+  const ma20 = calcMA(closeData, 20);
+  const ma60 = calcMA(closeData, 60);
 
   c.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 60, right: 20, top: 20, bottom: 30 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    grid: { left: 70, right: 20, top: 20, bottom: 40 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { color: '#7a8a9a', fontSize: 10,
-        formatter: v => v.slice(5) },
+      axisLabel: { color: '#7a8a9a', fontSize: 10, formatter: v => v.slice(5) },
       axisLine: { lineStyle: { color: '#2a3a4a' } },
+      axisTick: { lineStyle: { color: '#2a3a4a' } },
     },
     yAxis: {
       type: 'value', scale: true,
@@ -362,18 +426,15 @@ function renderKline(chart, f) {
     },
     series: [
       {
-        name: '收盘价', type: 'line', data: ohlc,
-        lineStyle: { color: '#42a5f5', width: 1.5 },
-        showSymbol: false,
-        markLine: {
-          silent: true, symbol: 'none',
-          data: [
-            { yAxis: chart.ma5, label: { formatter: `MA5: ${chart.ma5}`, color: '#ffa726', fontSize: 10 }, lineStyle: { color: '#ffa726', type: 'dashed' } },
-            { yAxis: chart.ma20, label: { formatter: `MA20: ${chart.ma20}`, color: '#ab47bc', fontSize: 10 }, lineStyle: { color: '#ab47bc', type: 'dashed' } },
-            { yAxis: chart.ma60, label: { formatter: `MA60: ${chart.ma60}`, color: '#66bb6a', fontSize: 10 }, lineStyle: { color: '#66bb6a', type: 'dashed' } },
-          ].filter(m => m.yAxis != null),
+        name: 'K线', type: 'candlestick', data: ohlc,
+        itemStyle: {
+          color: upColor, color0: downColor,
+          borderColor: upColor, borderColor0: downColor,
         },
       },
+      { name: 'MA5', type: 'line', data: ma5, smooth: true, lineStyle: { color: '#ffa726', width: 1 }, showSymbol: false },
+      { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { color: '#ab47bc', width: 1 }, showSymbol: false },
+      { name: 'MA60', type: 'line', data: ma60, smooth: true, lineStyle: { color: '#66bb6a', width: 1 }, showSymbol: false },
     ],
   });
 }
@@ -473,13 +534,119 @@ function renderVolume(chart) {
   });
 }
 
+// ── 搜索建议（自动补全）────────────────────────────────────
+
+let suggestIndex = -1;
+let suggestResults = [];
+let debounceTimer = null;
+
+async function searchStock(query) {
+  const res = await fetch(`/api/us/stock/search?q=${encodeURIComponent(query)}`);
+  const json = await res.json();
+  return json.ok ? json.data : [];
+}
+
+function showSuggestions(results) {
+  const el = document.getElementById('suggestions');
+  suggestResults = results;
+  suggestIndex = -1;
+  if (!results.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = results.map((r, i) => {
+    const nameHtml = highlightMatch(r.name, suggestQuery);
+    return `<div class="suggestion-item" data-index="${i}" data-code="${r.code}">
+      <span class="sname">${nameHtml}</span>
+      <span class="scode">${r.code}</span>
+    </div>`;
+  }).join('');
+}
+
+function highlightMatch(text, q) {
+  if (!q) return text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) {
+    let result = '';
+    let qi = 0;
+    for (let i = 0; i < text.length && qi < q.length; i++) {
+      if (text[i].toLowerCase() === q[qi].toLowerCase()) {
+        result += `<span class="shighlight">${text[i]}</span>`;
+        qi++;
+      } else {
+        result += text[i];
+      }
+    }
+    result += text.slice(result.replace(/<[^>]*>/g, '').length);
+    return result;
+  }
+  return text.slice(0, idx) +
+    `<span class="shighlight">${text.slice(idx, idx + q.length)}</span>` +
+    text.slice(idx + q.length);
+}
+
+function hideSuggestions() {
+  document.getElementById('suggestions').style.display = 'none';
+  suggestResults = [];
+  suggestIndex = -1;
+}
+
+function selectSuggestion(item) {
+  document.getElementById('stockSymbol').value = item.dataset.code;
+  hideSuggestions();
+  loadStock(item.dataset.code);
+}
+
+let suggestQuery = '';
+document.getElementById('stockSymbol').addEventListener('input', async (e) => {
+  const q = e.target.value.trim();
+  if (q.length < 1) { hideSuggestions(); return; }
+  suggestQuery = q;
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(async () => {
+    const results = await searchStock(q);
+    if (document.getElementById('stockSymbol').value.trim() === q) {
+      showSuggestions(results);
+    }
+  }, 200);
+});
+
+document.getElementById('stockSymbol').addEventListener('keydown', (e) => {
+  const items = document.querySelectorAll('.suggestion-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    suggestIndex = Math.min(suggestIndex + 1, items.length - 1);
+    updateActive(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    suggestIndex = Math.max(suggestIndex - 1, 0);
+    updateActive(items);
+  } else if (e.key === 'Enter') {
+    if (suggestIndex >= 0 && items.length > 0) {
+      e.preventDefault();
+      selectSuggestion(items[suggestIndex]);
+    } else {
+      loadStock();
+    }
+  } else if (e.key === 'Escape') {
+    hideSuggestions();
+  }
+});
+
+function updateActive(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === suggestIndex));
+}
+
+document.getElementById('suggestions').addEventListener('click', (e) => {
+  const item = e.target.closest('.suggestion-item');
+  if (item) selectSuggestion(item);
+});
+
+document.addEventListener('click', (e) => {
+  const box = document.querySelector('.search-box');
+  if (!box.contains(e.target)) hideSuggestions();
+});
+
 // 页面加载时自动查询默认股票
 window.addEventListener('DOMContentLoaded', () => loadStock());
-
-// 回车键触发查询
-document.getElementById('stockSymbol').addEventListener('keydown', e => {
-  if (e.key === 'Enter') loadStock();
-});
 </script>
 </body>
 </html>

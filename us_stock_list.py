@@ -1,41 +1,41 @@
-"""A股股票列表 — 从新浪财经获取名称→代码映射，支持模糊搜索。"""
+"""美股股票列表 — Wikipedia S&P 500 成分股，支持名称/代码模糊搜索。"""
 
+import io
 import json
 import os
 import threading
 import time
+import pandas as pd
 import requests
 
-CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_list_cache.json")
-REFRESH_INTERVAL = 24 * 60 * 60  # 24 hours
+CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "us_stock_list_cache.json")
+REFRESH_INTERVAL = 24 * 60 * 60
 
-SINA_API = (
-    "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-    "Market_Center.getHQNodeDataSimple"
-    "?page=1&num=6000&sort=symbol&asc=1&node=hs_a"
-)
+WIKI_SP500 = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
-_stocks: list[dict] = []  # [{code, name}]
+_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+_stocks: list[dict] = []
 _lock = threading.Lock()
 _loaded = False
 
 
 def _fetch_from_api() -> list[dict]:
-    """从新浪 API 拉取全量 A 股股票列表。"""
-    resp = requests.get(SINA_API, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    """从 Wikipedia 获取 S&P 500 成分股。"""
+    resp = requests.get(WIKI_SP500, timeout=30, headers=_headers)
     resp.raise_for_status()
-    raw = resp.json()
+    tables = pd.read_html(io.StringIO(resp.text))
+    df = tables[0]
     result = []
-    for item in raw:
-        code = item.get("code", "")
-        name = item.get("name", "")
-        if code and name and len(code) == 6:
-            result.append({"code": code, "name": name})
+    for _, row in df.iterrows():
+        symbol = str(row.get("Symbol", "")).strip().replace(".", "-")
+        name = str(row.get("Security", "")).strip()
+        if symbol and name:
+            result.append({"code": symbol, "name": name})
     return result
 
 
 def _load_cache() -> list[dict] | None:
-    """读取本地缓存，若有效返回列表否则返回 None。"""
     try:
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -48,7 +48,6 @@ def _load_cache() -> list[dict] | None:
 
 
 def _save_cache(stocks: list[dict]):
-    """写入本地缓存。"""
     data = {
         "updated_at": time.time(),
         "count": len(stocks),
@@ -58,51 +57,46 @@ def _save_cache(stocks: list[dict]):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def refresh_stock_list():
-    """从 API 刷新股票列表并写入缓存（阻塞调用）。"""
+def refresh_us_stock_list():
+    """从 API 刷新美股列表并写入缓存（阻塞调用）。"""
     global _stocks
     try:
         stocks = _fetch_from_api()
         _save_cache(stocks)
         with _lock:
             _stocks = stocks
-        print(f"[stock_list] 已刷新 {len(stocks)} 只股票")
+        print(f"[us_stock_list] 已刷新 {len(stocks)} 只美股")
     except Exception as e:
-        print(f"[stock_list] 刷新失败: {e}")
-        # 回退到缓存
+        print(f"[us_stock_list] 刷新失败: {e}")
         cached = _load_cache()
         if cached:
             with _lock:
                 _stocks = cached
-            print(f"[stock_list] 回退到缓存 ({len(cached)} 只)")
+            print(f"[us_stock_list] 回退到缓存 ({len(cached)} 只)")
 
 
 def _ensure_loaded():
-    """确保股票列表已加载（首次调用时触发）。"""
     global _loaded, _stocks
     if _loaded:
         return
     with _lock:
         if _loaded:
             return
-        # 优先读缓存
         cached = _load_cache()
         if cached:
             _stocks = cached
             _loaded = True
             age = time.time() - (os.path.getmtime(CACHE_FILE) if os.path.exists(CACHE_FILE) else 0)
-            # 缓存过期则后台刷新
             if age > REFRESH_INTERVAL:
-                t = threading.Thread(target=refresh_stock_list, daemon=True)
+                t = threading.Thread(target=refresh_us_stock_list, daemon=True)
                 t.start()
             return
         _loaded = True
-    # 无缓存时同步拉取
-    refresh_stock_list()
+    refresh_us_stock_list()
 
 
-def search_stocks(query: str, limit: int = 10) -> list[dict]:
-    """模糊搜索股票，返回 [{code, name, score}] 按相关度降序排列。"""
+def search_us_stocks(query: str, limit: int = 10) -> list[dict]:
+    """模糊搜索美股，返回 [{code, name, score}] 按相关度降序排列。"""
     _ensure_loaded()
 
     q = query.strip()
@@ -110,6 +104,7 @@ def search_stocks(query: str, limit: int = 10) -> list[dict]:
         return []
 
     q_lower = q.lower()
+    q_upper = q.upper()
     scored = []
 
     with _lock:
@@ -122,20 +117,19 @@ def search_stocks(query: str, limit: int = 10) -> list[dict]:
         code_lower = code.lower()
 
         score = 0
-        if q_lower == code_lower:
+        if q_upper == code.upper():
             score = 100
         elif q_lower == name_lower:
             score = 95
-        elif name_lower.startswith(q_lower):
-            score = 80
         elif code_lower.startswith(q_lower):
+            score = 80
+        elif name_lower.startswith(q_lower):
             score = 75
         elif q_lower in name_lower:
             score = 60
         elif q_lower in code_lower:
             score = 55
         else:
-            # 字符顺序匹配：query 的每个字符按顺序出现在 name 中
             idx = 0
             matched = True
             for ch in q_lower:

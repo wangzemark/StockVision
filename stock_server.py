@@ -9,6 +9,7 @@ from stock_list import search_stocks, refresh_stock_list
 from us_stock_data import fetch_realtime as us_fetch_realtime
 from us_stock_data import fetch_history as us_fetch_history
 from us_stock_data import fetch_all as us_fetch_all
+from us_stock_list import search_us_stocks, refresh_us_stock_list
 from stock_indicators import compute_all_technical
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -124,6 +125,16 @@ def us_index():
     return send_from_directory("static", "us_dashboard.html")
 
 
+@app.route("/api/us/stock/search")
+def api_us_stock_search():
+    """美股名称/代码模糊搜索。"""
+    q = request.args.get("q", "").strip()
+    if len(q) < 1:
+        return jsonify({"ok": True, "data": []})
+    results = search_us_stocks(q, limit=10)
+    return jsonify({"ok": True, "data": results})
+
+
 @app.route("/api/us/stock/<symbol>/fundamentals")
 def api_us_fundamentals(symbol):
     try:
@@ -150,7 +161,10 @@ def api_us_technical(symbol):
             "trend": tech["trend"],
             "chart": {
                 "dates": dates[-180:],
+                "open": [round(float(x), 2) for x in df["open"].tail(180)],
                 "close": [round(float(x), 2) for x in df["close"].tail(180)],
+                "high": [round(float(x), 2) for x in df["high"].tail(180)],
+                "low": [round(float(x), 2) for x in df["low"].tail(180)],
                 "volume": [round(float(x), 0) for x in df["volume"].tail(180)],
                 "ma5": tech["ma"].get("ma5"),
                 "ma20": tech["ma"].get("ma20"),
@@ -191,7 +205,10 @@ def api_us_all(symbol):
                 },
                 "chart": {
                     "dates": dates[-180:],
+                    "open": [round(float(x), 2) for x in df["open"].tail(180)],
                     "close": [round(float(x), 2) for x in df["close"].tail(180)],
+                    "high": [round(float(x), 2) for x in df["high"].tail(180)],
+                    "low": [round(float(x), 2) for x in df["low"].tail(180)],
                     "volume": [round(float(x), 0) for x in df["volume"].tail(180)],
                     "macd_dif": tech["macd_series"]["dif"],
                     "macd_dea": tech["macd_series"]["dea"],
@@ -212,6 +229,7 @@ if __name__ == "__main__":
 
     # 后台异步刷新股票列表
     threading.Thread(target=refresh_stock_list, daemon=True).start()
+    threading.Thread(target=refresh_us_stock_list, daemon=True).start()
 
     print()
     print("=" * 56)
